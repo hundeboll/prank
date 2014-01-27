@@ -33,46 +33,30 @@ p.add_argument('-d', '--debug',
 
 args = p.parse_args()
 
-class server(object):
+class connection(object):
     hdr_len = 4
 
-    def __init__(self, address, port):
-        self.running = True
-        self.sock = None
-        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.srv.bind((address, port))
-        self.srv.listen(1)
+    def __init__(self, sock, client):
+        self.sock = sock
+        self.client = client
+        self.set_keepalive()
 
-    def run(self):
-        while self.running:
-            try:
-                sock = None
-                sock,client = self.srv.accept()
-                logger.info("new connection: {}".format(client))
-                self.set_keepalive(sock)
-                self.sock = sock
-                self.client = client
+        if not self.read_source():
+            return
 
-                if not self.read_source():
-                    continue
+        if not self.read_object():
+            return
 
-                if not self.read_object():
-                    continue
+        self.run_object()
+        self.read_ending()
+        self.write_result()
+        self.close()
 
-                self.run_object()
-                self.read_ending()
-                self.write_result()
-                self.close_client()
-                logger.info("closed connection")
-            except Exception as e:
-                logger.error("exception: {}".format(e))
-
-    def set_keepalive(self, sock):
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 1)
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 1)
-        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 5)
+    def set_keepalive(self):
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self.sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 1)
+        self.sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 1)
+        self.sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 5)
 
     def read_hdr(self):
         l = 0
@@ -124,7 +108,6 @@ class server(object):
             logger.debug("adding global: {}".format(name))
             globals()[name] = obj
 
-
         return True
 
     def read_object(self):
@@ -151,7 +134,7 @@ class server(object):
         res = pickle.dumps(res)
         self.sock.send(res)
 
-    def close_client(self):
+    def close(self):
         if not self.sock:
             return
 
@@ -159,11 +142,35 @@ class server(object):
         self.sock.close()
         self.sock = None
 
+class server(object):
+    def __init__(self, address, port):
+        self.running = True
+        self.sock = None
+        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.srv.bind((address, port))
+        self.srv.listen(1)
+
+    def run(self):
+        while self.running:
+            try:
+                self.conn = None
+                sock,client = self.srv.accept()
+
+                logger.info("new connection: {}".format(client))
+                self.conn = connection(sock, client)
+                logger.info("closed connection")
+            except Exception as e:
+                logger.error("exception: {}".format(e))
+
+
     def close_srv(self):
         if not self.srv:
             return
 
-        self.close_client()
+        if self.conn:
+            self.conn.close()
+
         self.srv.close()
         self.srv = None
 

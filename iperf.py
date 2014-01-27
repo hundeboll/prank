@@ -57,4 +57,7 @@ class iperf_udp_server(object):
             print(err)
             return None
 
+        if not out:
+            return None
+
         return iperf_udp_client.parse_result(out)
