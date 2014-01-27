@@ -12,6 +12,7 @@ class iperf_udp_client(object):
 
         if err:
             print(err)
+            return None
 
         return self.parse_result(out)
 
@@ -54,5 +55,6 @@ class iperf_udp_server(object):
 
         if err:
             print(err)
+            return None
 
         return iperf_udp_client.parse_result(out)

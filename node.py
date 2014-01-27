@@ -50,6 +50,7 @@ class server(object):
                 sock = None
                 sock,client = self.srv.accept()
                 logger.info("new connection: {}".format(client))
+                self.set_keepalive(sock)
                 self.sock = sock
                 self.client = client
 
@@ -66,6 +67,12 @@ class server(object):
                 logger.info("closed connection")
             except Exception as e:
                 logger.error("exception: {}".format(e))
+
+    def set_keepalive(self, sock):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 1)
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 1)
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 5)
 
     def read_hdr(self):
         l = 0
@@ -107,17 +114,16 @@ class server(object):
         if not data:
             return False
 
-        src = pickle.loads(data)
+        name,src = pickle.loads(data)
         logger.debug("read source with length {}".format(len(src)))
         module = imp.new_module("client")
         exec src in module.__dict__
-
-        for name,obj in inspect.getmembers(module):
-            if inspect.isclass(obj):
-                logger.debug("adding global: {}".format(name))
-                globals()[name] = obj
-
         sys.modules[name] = module
+
+        for name,obj in inspect.getmembers(module, inspect.isclass):
+            logger.debug("adding global: {}".format(name))
+            globals()[name] = obj
+
 
         return True
 
@@ -168,7 +174,7 @@ class client(object):
 
         self.sock = socket.create_connection((host, port))
 
-        self.write(src)
+        self.write((mod.__name__, src))
         self.write(obj)
 
     def write(self, data=None):
